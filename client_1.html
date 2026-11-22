@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ANTON CHIGURH</title>
+<title>CHIGURH</title>
 <style>
   body { background:#000; color:#ccc; font-family: monospace; padding:20px; }
   button { font-size:18px; padding:12px 20px; margin:6px 0; width:100%; }
@@ -17,8 +17,8 @@
 
   <!-- 1. 역할 선택. 버튼 누르는 게 오디오 허용(특히 아이폰)도 겸함 -->
   <div id="pick">
-    <button onclick="start('hider')">HIDER</button>
-    <button onclick="start('seeker')">SEEKER</button>
+    <button onclick="start('hider')">숨는 사람</button>
+    <button onclick="start('seeker')">술래</button>
     <p>
       <label><input type="checkbox" id="fake"> 가짜 위치 쓰기 (맥에서 테스트용)</label><br>
       <input id="fakeLat" value="49.5897"> <input id="fakeLng" value="11.0040">
@@ -112,14 +112,22 @@ function playBeep() {
   osc.stop(audioCtx.currentTime + 0.05);    // 50ms짜리
 }
 
+// 서버가 1초마다 간격을 보내도 타이머를 리셋하지 않게:
+// 삑 하나 울릴 때마다 "지금 간격"을 다시 읽어서 다음 삑을 예약한다.
+// interval_ms === 0 이면 연속음 취급(최소 간격으로).
+let currentInterval = null, loopRunning = false;
+
 function setBeep(intervalMs) {
-  clearInterval(beepTimer);
-  beepTimer = null;
+  currentInterval = intervalMs;
   const s = document.getElementById("status");
-  if (intervalMs == null) { s.textContent = role === "seeker" ? "..." : s.textContent; return; }
-  s.textContent = "삑 / " + intervalMs + "ms";
+  if (role === "seeker") s.textContent = intervalMs == null ? "..." : "삑 / " + intervalMs + "ms";
+  if (intervalMs != null && !loopRunning) { loopRunning = true; beepLoop(); }
+}
+
+function beepLoop() {
+  if (currentInterval == null) { loopRunning = false; return; }
   playBeep();
-  beepTimer = setInterval(playBeep, intervalMs);
+  setTimeout(beepLoop, Math.max(currentInterval, 60));
 }
 </script>
 </body>
