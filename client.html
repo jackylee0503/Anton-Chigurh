@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANTON CHIGURH</title>
+<style>
+  body { background:#000; color:#ccc; font-family: monospace; padding:20px; }
+  button { font-size:18px; padding:12px 20px; margin:6px 0; width:100%; }
+  input { width:45%; font-size:14px; }
+  #log { margin-top:16px; font-size:12px; white-space:pre-wrap; max-height:40vh; overflow:auto; }
+  .big { font-size:40px; text-align:center; margin:20px 0; }
+</style>
+</head>
+<body>
+  <h2>CHIGURH</h2>
+
+  <!-- 1. 역할 선택. 버튼 누르는 게 오디오 허용(특히 아이폰)도 겸함 -->
+  <div id="pick">
+    <button onclick="start('hider')">HIDER</button>
+    <button onclick="start('seeker')">SEEKER</button>
+    <p>
+      <label><input type="checkbox" id="fake"> 가짜 위치 쓰기 (맥에서 테스트용)</label><br>
+      <input id="fakeLat" value="49.5897"> <input id="fakeLng" value="11.0040">
+    </p>
+  </div>
+
+  <div id="status" class="big"></div>
+  <div id="log"></div>
+
+<script>
+// ===== 설정 =====
+const WS_URL = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+const SEND_EVERY_MS = 1000;   // 위치 보내는 주기
+
+let ws, role, audioCtx, beepTimer = null, lastPos = null;
+
+function log(msg) {
+  const el = document.getElementById("log");
+  el.textContent = new Date().toLocaleTimeString() + "  " + msg + "\n" + el.textContent;
+}
+
+// ===== 시작 =====
+function start(r) {
+  role = r;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  document.getElementById("pick").style.display = "none";
+  document.getElementById("status").textContent = role === "hider" ? "숨는 중" : "...";
+
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    log("연결됨");
+    send({ type: "join", role: role });          // [OUT] join
+    startLocation();
+  };
+  ws.onmessage = (e) => {
+    log("받음: " + e.data);
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }   // JSON 아니면 무시 (에코 테스트 문자열 등)
+    if (msg.type === "beep") setBeep(msg.interval_ms);    // [IN] beep
+  };
+  ws.onclose = () => { log("연결 끊김"); setBeep(null); };
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+    log("보냄: " + JSON.stringify(obj));
+  }
+}
+
+// ===== 위치 =====
+function startLocation() {
+  if (document.getElementById("fake").checked) {
+    // 가짜 위치: 입력칸 값을 1초마다 보냄. 칸 값을 바꾸면 이동한 걸로 취급
+    setInterval(() => {
+      lastPos = {
+        lat: parseFloat(document.getElementById("fakeLat").value),
+        lng: parseFloat(document.getElementById("fakeLng").value),
+        accuracy: 5,
+      };
+      sendLocation();
+    }, SEND_EVERY_MS);
+    document.getElementById("pick").style.display = "block";   // 입력칸 다시 보이게
+    document.querySelectorAll("#pick button").forEach(b => b.style.display = "none");
+    return;
+  }
+
+  // 진짜 GPS: 브라우저가 위치 바뀔 때마다 콜백 호출
+  navigator.geolocation.watchPosition(
+    (p) => { lastPos = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }; },
+    (err) => log("위치 에러: " + err.message),
+    { enableHighAccuracy: true, maximumAge: 0 }
+  );
+  setInterval(sendLocation, SEND_EVERY_MS);
+}
+
+function sendLocation() {
+  if (!lastPos) return;
+  send({ type: "location", lat: lastPos.lat, lng: lastPos.lng,
+         accuracy: lastPos.accuracy, ts: Date.now() / 1000 });   // [OUT] location
+}
+
+// ===== 삑 =====
+function playBeep() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.frequency.value = 2400;               // 높은 삑
+  gain.gain.value = 0.3;
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.05);    // 50ms짜리
+}
+
+function setBeep(intervalMs) {
+  clearInterval(beepTimer);
+  beepTimer = null;
+  const s = document.getElementById("status");
+  if (intervalMs == null) { s.textContent = role === "seeker" ? "..." : s.textContent; return; }
+  s.textContent = "삑 / " + intervalMs + "ms";
+  playBeep();
+  beepTimer = setInterval(playBeep, intervalMs);
+}
+</script>
+</body>
+</html>
